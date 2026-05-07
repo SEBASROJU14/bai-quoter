@@ -1,7 +1,8 @@
 "use client";
 
 interface MicButtonProps {
-  listening: boolean;
+  recording: boolean;
+  transcribing: boolean;
   speaking: boolean;
   supported: boolean;
   onToggle: () => void;
@@ -41,29 +42,50 @@ function MicIcon() {
   );
 }
 
-export default function MicButton({ listening, speaking, supported, onToggle }: MicButtonProps) {
+function SpinnerIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="20"
+      height="20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      className="animate-spin"
+    >
+      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+    </svg>
+  );
+}
+
+export default function MicButton({ recording, transcribing, speaking, supported, onToggle }: MicButtonProps) {
   if (!supported) return null;
 
+  const busy = speaking || transcribing;
+
   return (
-    <div className={`relative flex-shrink-0 ${listening ? "mic-active" : ""}`}>
-      {listening && (
+    <div className={`relative flex-shrink-0 ${recording ? "mic-active" : ""}`}>
+      {recording && (
         <span className="pulse-ring absolute inset-0 rounded-full border-2 border-[#F4A7B9] pointer-events-none" />
       )}
       <button
         onClick={onToggle}
-        disabled={speaking}
-        aria-label={listening ? "Detener grabación" : "Hablar"}
+        disabled={busy}
+        aria-label={recording ? "Detener grabación" : "Hablar"}
         className={`
           pulse-dot relative z-10 w-14 h-14 rounded-full flex items-center justify-center
           transition-all duration-200 active:scale-95
-          ${listening
+          ${recording
             ? "bg-[#F4A7B9]/35 text-[#C44070] border-2 border-[#F4A7B9]/70 pink-glow"
+            : transcribing
+            ? "bg-[#B8A9D9]/30 text-[#7B74A0] border border-[#B8A9D9]/50"
             : "bg-white/50 text-[#7B74A0] border border-[#B8A9D9]/50 hover:bg-white/70 hover:border-[#B8A9D9]/80"
           }
-          ${speaking ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}
+          ${busy ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
         `}
       >
-        {listening ? <WaveIcon /> : <MicIcon />}
+        {recording ? <WaveIcon /> : transcribing ? <SpinnerIcon /> : <MicIcon />}
       </button>
     </div>
   );

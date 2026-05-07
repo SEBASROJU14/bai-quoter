@@ -5,22 +5,21 @@ import MicButton from "./MicButton";
 
 interface ChatInputProps {
   onSend: (text: string) => void;
-  listening: boolean;
+  recording: boolean;
+  transcribing: boolean;
   speaking: boolean;
   supported: boolean;
   onMicToggle: () => void;
   disabled?: boolean;
-  transcript?: string;
 }
 
 export default function ChatInput({
   onSend,
-  listening,
+  recording,
+  transcribing,
   speaking,
   supported,
   onMicToggle,
-  disabled,
-  transcript,
 }: ChatInputProps) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -44,23 +43,30 @@ export default function ChatInput({
   );
 
   const canSend = text.trim().length > 0;
+  const inputBusy = recording || transcribing;
 
   return (
     <div className="flex items-end gap-3 px-4 py-4 safe-bottom bg-[#B0D5EC] border-t border-[#B8A9D9]/25 flex-shrink-0">
       <MicButton
-        listening={listening}
+        recording={recording}
+        transcribing={transcribing}
         speaking={speaking}
         supported={supported}
         onToggle={onMicToggle}
       />
 
       <div className="flex-1 flex items-end gap-2 bg-white/65 border border-[#B8A9D9]/40 rounded-[20px] px-4 py-3 focus-within:border-[#B8A9D9]/70 transition-colors">
-        {listening && (
+        {recording && (
           <div className="flex-1 text-[18px] text-[#C44070]/80 italic py-0.5 min-h-[26px]">
-            {transcript || "Escuchando..."}
+            Grabando...
           </div>
         )}
-        {!listening && (
+        {!recording && transcribing && (
+          <div className="flex-1 text-[18px] text-[#7B74A0]/70 italic py-0.5 min-h-[26px]">
+            Transcribiendo...
+          </div>
+        )}
+        {!inputBusy && (
           <textarea
             ref={textareaRef}
             value={text}
@@ -79,12 +85,12 @@ export default function ChatInput({
 
       <button
         onClick={handleSend}
-        disabled={!canSend}
+        disabled={!canSend || inputBusy}
         aria-label="Enviar"
         className={`
           w-14 h-14 rounded-full flex items-center justify-center flex-shrink-0
           transition-all duration-200 active:scale-95
-          ${canSend
+          ${canSend && !inputBusy
             ? "bg-gradient-to-br from-[#F4A7B9] to-[#B8A9D9] text-[#2A2438] pink-glow shadow-md"
             : "bg-white/40 text-[#7B74A0]/40 cursor-not-allowed border border-[#B8A9D9]/25"
           }

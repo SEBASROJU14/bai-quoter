@@ -5,7 +5,7 @@ import { v4 as uuid } from "uuid";
 import Message, { MessageData, TypingIndicator } from "./Message";
 import ChatInput from "./ChatInput";
 import FoxAvatar from "./FoxAvatar";
-import { useSpeechRecognition, useTTS } from "../hooks/useSpeech";
+import { useMediaRecorder, useTTS } from "../hooks/useSpeech";
 import InstallPrompt from "./InstallPrompt";
 
 const GREETING =
@@ -27,7 +27,6 @@ function toClaudeMessages(messages: MessageData[]): ClaudeMessage[] {
 export default function Chat() {
   const [messages, setMessages] = useState<MessageData[]>([]);
   const [typing, setTyping] = useState(false);
-  const [transcript, setTranscript] = useState("");
   const [lastBaiId, setLastBaiId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const initialized = useRef(false);
@@ -136,16 +135,12 @@ export default function Chat() {
   );
 
   const onSpeechResult = useCallback(
-    (text: string) => {
-      setTranscript("");
-      handleUserMessage(text);
-    },
+    (text: string) => { handleUserMessage(text); },
     [handleUserMessage]
   );
 
-  const { listening, supported, toggle } = useSpeechRecognition({
+  const { recording, transcribing, supported, toggle } = useMediaRecorder({
     onResult: onSpeechResult,
-    onEnd: () => setTranscript(""),
   });
 
   const handleMicToggle = useCallback(() => {
@@ -178,8 +173,10 @@ export default function Chat() {
           <p className="text-xs text-[#7B74A0] truncate">
             {speaking
               ? "Hablando..."
-              : listening
-              ? "Escuchando..."
+              : recording
+              ? "Grabando..."
+              : transcribing
+              ? "Transcribiendo..."
               : "Asistente de Logística · Hand Carry"}
           </p>
         </div>
@@ -226,12 +223,12 @@ export default function Chat() {
       {/* Input */}
       <ChatInput
         onSend={handleUserMessage}
-        listening={listening}
+        recording={recording}
+        transcribing={transcribing}
         speaking={speaking}
         supported={supported}
         onMicToggle={handleMicToggle}
         disabled={typing}
-        transcript={transcript}
       />
     </div>
   );

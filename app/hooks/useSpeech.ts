@@ -2,106 +2,104 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-type SpeechRecognitionConstructor = new () => {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  maxAlternatives: number;
-  start(): void;
-  stop(): void;
-  abort(): void;
-  onresult: ((event: {
-    results: { [i: number]: { [j: number]: { transcript: string } } };
-  }) => void) | null;
-  onend: (() => void) | null;
-  onerror: (() => void) | null;
-};
+// ── MediaRecorder-based voice input ──────────────────────────────────────────
+// Uses MediaRecorder (works on iOS Safari 14.5+) + server-side Whisper
+// transcription instead of Web Speech API (unreliable on iOS).
 
-function getSpeechRecognition(): SpeechRecognitionConstructor | null {
-  if (typeof window === "undefined") return null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const w = window as any;
-  return w.SpeechRecognition || w.webkitSpeechRecognition || null;
+function getSupportedMimeType(): string {
+  if (typeof MediaRecorder === "undefined") return "";
+  const types = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/ogg;codecs=opus",
+  ];
+  return types.find((t) => MediaRecorder.isTypeSupported(t)) ?? "";
 }
 
-interface UseSpeechOptions {
+interface UseMediaRecorderOptions {
   onResult: (text: string) => void;
-  onEnd?: () => void;
 }
 
-export function useSpeechRecognition({ onResult, onEnd }: UseSpeechOptions) {
-  const [listening, setListening] = useState(false);
+export function useMediaRecorder({ onResult }: UseMediaRecorderOptions) {
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const [supported, setSupported] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recognitionRef = useRef<any>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
   const onResultRef = useRef(onResult);
-  const onEndRef = useRef(onEnd);
 
   useEffect(() => {
     onResultRef.current = onResult;
-    onEndRef.current = onEnd;
-  }, [onResult, onEnd]);
+  }, [onResult]);
 
   useEffect(() => {
-    if (getSpeechRecognition()) setSupported(true);
-    return () => {
-      recognitionRef.current?.abort();
-    };
+    if (typeof window !== "undefined" && !!navigator.mediaDevices?.getUserMedia) {
+      setSupported(true);
+    }
   }, []);
 
-  const startListening = useCallback(() => {
-    if (listening) return;
-    const API = getSpeechRecognition();
-    if (!API) return;
+  const start = useCallback(() => {
+    if (recording || transcribing) return;
 
-    // iOS Safari requires a fresh instance on every start() call —
-    // reusing a stopped instance throws InvalidStateError silently.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rec: any = new API();
-    rec.lang = "es-MX";
-    rec.continuous = false;
-    rec.interimResults = false;
-    rec.maxAlternatives = 1;
+    // getUserMedia is initiated synchronously within the user-gesture handler,
+    // satisfying iOS Safari's requirement even though it resolves asynchronously.
+    void navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then((stream) => {
+        const mimeType = getSupportedMimeType();
+        const recorder = new MediaRecorder(
+          stream,
+          mimeType ? { mimeType } : undefined
+        );
+        recorderRef.current = recorder;
+        chunksRef.current = [];
 
-    rec.onresult = (event: { results: { [i: number]: { [j: number]: { transcript: string } } } }) => {
-      onResultRef.current(event.results[0][0].transcript);
-    };
+        recorder.ondataavailable = (e) => {
+          if (e.data.size > 0) chunksRef.current.push(e.data);
+        };
 
-    rec.onend = () => {
-      setListening(false);
-      recognitionRef.current = null;
-      onEndRef.current?.();
-    };
+        recorder.onstop = () => {
+          stream.getTracks().forEach((t) => t.stop());
 
-    rec.onerror = () => {
-      setListening(false);
-      recognitionRef.current = null;
-    };
+          const ext = mimeType.includes("mp4") ? "mp4" : "webm";
+          const blob = new Blob(chunksRef.current, {
+            type: mimeType || "audio/webm",
+          });
+          chunksRef.current = [];
+          recorderRef.current = null;
 
-    recognitionRef.current = rec;
+          setTranscribing(true);
+          const form = new FormData();
+          form.append("audio", blob, `recording.${ext}`);
 
-    // start() must be called synchronously inside the user-gesture handler.
-    // No await or setTimeout before this point — required by iOS Safari.
-    try {
-      rec.start();
-      setListening(true);
-    } catch {
-      recognitionRef.current = null;
-    }
-  }, [listening]);
+          fetch("/api/transcribe", { method: "POST", body: form })
+            .then((r) => r.json())
+            .then(({ text }: { text?: string }) => {
+              if (text?.trim()) onResultRef.current(text.trim());
+            })
+            .catch((err) => console.error("[Transcribe]", err))
+            .finally(() => setTranscribing(false));
+        };
 
-  const stopListening = useCallback(() => {
-    if (!recognitionRef.current || !listening) return;
-    recognitionRef.current.stop();
-    // setListening(false) is handled by onend to avoid double state updates
-  }, [listening]);
+        recorder.start();
+        setRecording(true);
+      })
+      .catch((err) => console.error("[Mic] getUserMedia:", err));
+  }, [recording, transcribing]);
+
+  const stop = useCallback(() => {
+    if (!recorderRef.current || !recording) return;
+    recorderRef.current.stop();
+    setRecording(false);
+  }, [recording]);
 
   const toggle = useCallback(() => {
-    if (listening) stopListening();
-    else startListening();
-  }, [listening, startListening, stopListening]);
+    if (recording) stop();
+    else start();
+  }, [recording, start, stop]);
 
-  return { listening, supported, toggle, startListening, stopListening };
+  return { recording, transcribing, supported, toggle };
 }
 
 function splitSentences(text: string): string[] {
