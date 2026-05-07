@@ -1,8 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
+import { searchFlights } from "../../lib/duffel";
 
 export const maxDuration = 60;
-import { searchFlights } from "../../lib/duffel";
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -56,14 +56,14 @@ Termina SIEMPRE la presentación de opciones de ida con esta pregunta exacta:
 
 Si el usuario dice "sí", "claro", "muéstrame más", o especifica un criterio:
 1. Llama a search_flights con los MISMOS parámetros (mismo origin_iata, destination_iata, departure_date, passengers)
-2. Usa el array `alternatives` del resultado (contiene hasta 3 ofertas distintas a cheapest/fastest)
+2. Usa el array "alternatives" del resultado (contiene hasta 3 ofertas distintas a cheapest/fastest)
 3. Selecciona 2 alternativas según el criterio del usuario:
    - "más tarde" / "salida posterior" → las de departureIso más tardío
    - "más temprano" / "que llegue antes" → las de arrivalIso más temprano
    - "más directo" / "sin escala" → las de menor stops, luego menor precio
    - Sin criterio específico o "sí" → las 2 de menor precio en alternatives
 4. Presenta las 2 seleccionadas con el MISMO FORMATO que las opciones principales (etiquetadas OPCIÓN 3 y OPCIÓN 4)
-5. Si `alternatives` está vacío, responde: "No encontré más opciones disponibles para ese vuelo. ¿Cuál de las opciones anteriores te interesa más?"
+5. Si "alternatives" está vacío, responde: "No encontré más opciones disponibles para ese vuelo. ¿Cuál de las opciones anteriores te interesa más?"
 6. Tras mostrar las opciones adicionales (o si el usuario rechaza verlas), continúa a Fase 2.
 
 ---
