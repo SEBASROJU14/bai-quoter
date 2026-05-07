@@ -43,51 +43,57 @@ export function useSpeechRecognition({ onResult, onEnd }: UseSpeechOptions) {
   }, [onResult, onEnd]);
 
   useEffect(() => {
+    if (getSpeechRecognition()) setSupported(true);
+    return () => {
+      recognitionRef.current?.abort();
+    };
+  }, []);
+
+  const startListening = useCallback(() => {
+    if (listening) return;
     const API = getSpeechRecognition();
     if (!API) return;
-    setSupported(true);
 
-    const rec = new API();
+    // iOS Safari requires a fresh instance on every start() call —
+    // reusing a stopped instance throws InvalidStateError silently.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rec: any = new API();
     rec.lang = "es-MX";
     rec.continuous = false;
     rec.interimResults = false;
     rec.maxAlternatives = 1;
 
     rec.onresult = (event: { results: { [i: number]: { [j: number]: { transcript: string } } } }) => {
-      const transcript = event.results[0][0].transcript;
-      onResultRef.current(transcript);
+      onResultRef.current(event.results[0][0].transcript);
     };
 
     rec.onend = () => {
       setListening(false);
+      recognitionRef.current = null;
       onEndRef.current?.();
     };
 
     rec.onerror = () => {
       setListening(false);
+      recognitionRef.current = null;
     };
 
     recognitionRef.current = rec;
 
-    return () => {
-      rec.abort();
-    };
-  }, []);
-
-  const startListening = useCallback(() => {
-    if (!recognitionRef.current || listening) return;
+    // start() must be called synchronously inside the user-gesture handler.
+    // No await or setTimeout before this point — required by iOS Safari.
     try {
-      recognitionRef.current.start();
+      rec.start();
       setListening(true);
     } catch {
-      // already started
+      recognitionRef.current = null;
     }
   }, [listening]);
 
   const stopListening = useCallback(() => {
     if (!recognitionRef.current || !listening) return;
     recognitionRef.current.stop();
-    setListening(false);
+    // setListening(false) is handled by onend to avoid double state updates
   }, [listening]);
 
   const toggle = useCallback(() => {
