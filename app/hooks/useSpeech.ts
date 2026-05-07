@@ -19,19 +19,22 @@ function getSupportedMimeType(): string {
 
 interface UseMediaRecorderOptions {
   onResult: (text: string) => void;
+  onError?: (msg: string) => void;
 }
 
-export function useMediaRecorder({ onResult }: UseMediaRecorderOptions) {
+export function useMediaRecorder({ onResult, onError }: UseMediaRecorderOptions) {
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [supported, setSupported] = useState(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const onResultRef = useRef(onResult);
+  const onErrorRef = useRef(onError);
 
   useEffect(() => {
     onResultRef.current = onResult;
-  }, [onResult]);
+    onErrorRef.current = onError;
+  }, [onResult, onError]);
 
   useEffect(() => {
     if (typeof window !== "undefined" && !!navigator.mediaDevices?.getUserMedia) {
@@ -62,23 +65,56 @@ export function useMediaRecorder({ onResult }: UseMediaRecorderOptions) {
         recorder.onstop = () => {
           stream.getTracks().forEach((t) => t.stop());
 
-          const ext = mimeType.includes("mp4") ? "mp4" : "webm";
+          // iOS Safari produces audio/mp4 → use .m4a so Whisper recognises it
+          const ext = mimeType.includes("mp4") ? "m4a"
+            : mimeType.includes("ogg") ? "ogg"
+            : "webm";
           const blob = new Blob(chunksRef.current, {
             type: mimeType || "audio/webm",
           });
           chunksRef.current = [];
           recorderRef.current = null;
 
+          console.log("[MediaRecorder] onstop — chunks:", blob.size, "bytes, type:", blob.type, "ext:", ext);
+
+          if (blob.size < 1000) {
+            console.warn("[MediaRecorder] blob too small, skipping transcription");
+            onErrorRef.current?.("La grabación fue demasiado corta. Intenta de nuevo.");
+            return;
+          }
+
           setTranscribing(true);
           const form = new FormData();
           form.append("audio", blob, `recording.${ext}`);
 
-          fetch("/api/transcribe", { method: "POST", body: form })
-            .then((r) => r.json())
-            .then(({ text }: { text?: string }) => {
-              if (text?.trim()) onResultRef.current(text.trim());
+          // 25-second client-side timeout — prevents stuck "Transcribiendo..." forever
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 25000);
+
+          fetch("/api/transcribe", { method: "POST", body: form, signal: controller.signal })
+            .then((r) => {
+              clearTimeout(timeout);
+              return r.json().then((body: { text?: string; error?: string }) => {
+                if (!r.ok) throw new Error(`HTTP ${r.status}: ${body.error ?? "error desconocido"}`);
+                return body;
+              });
             })
-            .catch((err) => console.error("[Transcribe]", err))
+            .then(({ text }: { text?: string }) => {
+              console.log("[Transcribe] result:", text);
+              if (text?.trim()) {
+                onResultRef.current(text.trim());
+              } else {
+                throw new Error("Transcripción vacía");
+              }
+            })
+            .catch((err: Error) => {
+              clearTimeout(timeout);
+              const msg = err.name === "AbortError"
+                ? "La transcripción tardó demasiado. Intenta de nuevo."
+                : `Error al transcribir: ${err.message}`;
+              console.error("[Transcribe]", msg);
+              onErrorRef.current?.(msg);
+            })
             .finally(() => setTranscribing(false));
         };
 

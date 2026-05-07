@@ -139,8 +139,20 @@ export default function Chat() {
     [handleUserMessage]
   );
 
+  const onSpeechError = useCallback(
+    (msg: string) => {
+      setTyping(false);
+      setMessages((prev) => [
+        ...prev,
+        { id: uuid(), role: "bai", text: `⚠️ ${msg}`, ts: Date.now() },
+      ]);
+    },
+    []
+  );
+
   const { recording, transcribing, supported, toggle } = useMediaRecorder({
     onResult: onSpeechResult,
+    onError: onSpeechError,
   });
 
   const handleMicToggle = useCallback(() => {
