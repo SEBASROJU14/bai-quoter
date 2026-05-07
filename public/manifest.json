@@ -4,8 +4,8 @@
   "description": "Asistente de logística ágil para cotizaciones de envío",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0d0d0d",
-  "theme_color": "#d4a017",
+  "background_color": "#C8E6F5",
+  "theme_color": "#B0D5EC",
   "orientation": "portrait",
   "icons": [
     {
